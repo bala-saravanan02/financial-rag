@@ -10,8 +10,13 @@ requires-python = ">=3.12"
 dependencies = [
     "chromadb>=1.5.9",
     "ollama>=0.6.2",
+    "pandas>=3.0.5",
     "pymupdf>=1.28.0",
+    "pytesseract>=0.3.13",
+    "python-magic>=0.4.27",
+    "python-magic-bin>=0.4.14",
     "sentence-transformers>=5.7.0",
+    "tabulate>=0.10.0",
 ]
 
 [project.scripts]
