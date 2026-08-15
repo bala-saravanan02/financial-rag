@@ -18,7 +18,7 @@ if not os.path.exists(tesseract_cmd):
 # 3. Assign the valid verified path to the pytesseract wrapper package
 pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
-def load_pdf(file_name) -> List[dict]:
+def load_pdf(file_name: str) -> List[dict]:
 
     #Defining the file Path
     file_path = BASE_DIR / "data" / "raw" / file_name

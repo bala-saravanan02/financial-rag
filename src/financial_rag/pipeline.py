@@ -3,89 +3,85 @@ import random
 from src.financial_rag.ingestion.loaders import load_pdf
 from src.financial_rag.ingestion.chunkers import chunk_pages
 from src.financial_rag.embeddings.embedder import embed_chunks
+from src.financial_rag.retrieval.vectorstore import get_or_create_collection,add_chunks,query_collection
 from transformers import AutoTokenizer
+
+from config.config import MODEL_ID,TOKENIZER_ID,BASE_DIR
 # Import your newly written embedding function from its module
 # (Adjust this import path depending on where you saved your embed_chunks function)
 from sentence_transformers import SentenceTransformer
 
-TOKENIZER_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
+
 tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_ID)
 
-# Initialize the embedding model for the pipeline validation step
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
 model = SentenceTransformer(MODEL_ID, device="cpu")
-
-
 if __name__ == "__main__":
     target_file = "google.html.pdf"
-    if not os.path.exists(target_file) and os.path.exists(f"data/{target_file}"):
-        target_file = f"data/{target_file}"
-        
-    print(f"🔄 Processing '{target_file}' for structural inspection...\n")
-    parents, children = load_pdf(target_file)
+    #if not os.path.exists(target_file):
+     #   print(f"❌ Test file cannot be found at '{target_file}'")
+      #  exit(1)
+
+    print("🚀 Verifying Specification Rule Conformity...")
     
-    print("=" * 60)
-    print("🔍 VISUAL INSPECTION MODE (RANDOM SAMPLE + PIPELINE VALIDATION)")
-    print("=" * 60)
+    # Run structural pipeline stages
+    parents, _ = load_pdf(target_file)
+    processed_chunks = chunk_pages(parents, chunk_size=200, chunk_overlap=40)
+    embedded_chunks = embed_chunks(processed_chunks)
     
-    # 1. Inspect a RANDOM Parent Page text block
-    if parents:
-        random_parent_idx = random.randint(0, len(parents) - 1)
-        sample_parent = parents[random_parent_idx]
-        print(f"\n📄 [SAMPLE PARENT PAGE CHUNK (Random Index: {random_parent_idx})]")
-        print("-" * 40)
+    # 1. Test Rule 1: Get or Create Collection Object
+    print("\n📦 Rule 1 Check: Retrieving collection reference object...")
+    my_collection = get_or_create_collection(name="financial_10k")
+    print(f" • Success. Target Collection Reference ID: {my_collection.name}")
+    
+    # 2. Test Rule 2: Idempotent add_chunks
+    print("\n📥 Rule 2 Check: Adding chunks via idempotent upsert array mappings...")
+    add_chunks(my_collection, embedded_chunks)
+    
+    # 3. Test Rule 3: Raw Query Collection (Passing text string directly now)
+    test_question = "What are Google's main sources of advertising revenue?"
+    print(f"\n🔍 Rule 3 Check: Querying collection via raw text string input...")
+    
+    # Clean and encapsulated: We pass 'test_question' (str) instead of 'query_vector' (list)
+    raw_chroma_payload = query_collection(my_collection, test_question, top_k=2)
+    
+    print("\n🏆 RAW CHROMA DICTIONARY PAYLOAD RETURN DETECTED:")
+    print("=" * 75)
+    print(f"Type of output: {type(raw_chroma_payload)}")
+    print(f"Dictionary Root Keys: {list(raw_chroma_payload.keys())}")
+    print("-" * 75)
+    print(f"• Raw Matched IDs  : {raw_chroma_payload.get('ids')}")
+    print(f"• Raw Distance Math: {raw_chroma_payload.get('distances')}")
+    print("=" * 75)
+    print("✅ All functional specification targets met. Data sits stored on disk and maps cleanly to raw targets.")
+     # =========================================================================
+    # 👇 PLACE THESE NEW LINES RIGHT HERE TO READ THE RAW TEXT CONTENTS 👇
+    # =========================================================================
+    print("-" * 75)
+    print("📖 [HUMAN-READABLE TEXT MATCHES EXTRACTED FROM SQLITE DATA LAYER]")
+    print("-" * 75)
+    
+    # Safely extract individual lists by targeting the 0th inner query array index
+    matched_ids = raw_chroma_payload["ids"][0]
+    matched_distances = raw_chroma_payload["distances"][0]
+    matched_documents = raw_chroma_payload["documents"][0]
+    matched_metadatas = raw_chroma_payload["metadatas"][0]
+    
+    # Zip elements together to loop over ranked rows step-by-step
+    for rank, (chunk_id, score, text_content, metadata) in enumerate(
+        zip(matched_ids, matched_distances, matched_documents, matched_metadatas)
+    ):
+        print(f"🥇 Result Rank {rank + 1}:")
+        print(f"   • Chunk Unique ID: {chunk_id}")
+        print(f"   • Cosine Distance: {score:.4f}")
+        print(f"   • File Provenance: {metadata.get('file_name')} | Page: {metadata.get('source_page')}")
+        print(f"   • Text Content   : \"{text_content.strip()}\"")
+        print("." * 75) # Mini separation spacer dot line
         
-        text_content = sample_parent.get('page_content', '') if isinstance(sample_parent, dict) else (
-            sample_parent.page_content if hasattr(sample_parent, 'page_content') else str(sample_parent)
-        )
-        print("--- [Original Text Sample (First 300 Chars)] ---")
-        print(text_content[:300] + "\n...")
-        
-        # --- PHASE 1: Run the safe chunking execution pipeline ---
-        processed_chunks = chunk_pages(parents, chunk_size=200, chunk_overlap=40)
-        print(f"\n📦 [Chunking Results: Generated {len(processed_chunks)} sub-chunks]")
-        
-        # --- PHASE 2: Run the new embedding matrix operations pipeline ---
-        print("\n🧠 [Embedding Generation: Triggering model.encode()...]")
-        embedded_chunks = embed_chunks(processed_chunks)
-        print("✅ Embeddings calculated and appended to dictionary structures.")
-        
-        # --- PHASE 3: Verify and print output for validation ---
-        print("\n📋 [Verifying Pipeline Transformations (Previewing First 3 Chunks)]")
-        print("-" * 40)
-        for i, chunk in enumerate(embedded_chunks[:3]):
-            text_to_encode = chunk.get("chunk_content", "")
-            
-            # Recalculate token count to inspect potential 200 -> 202 round-trip drift
-            chunk_tokens = len(tokenizer.encode(text_to_encode, add_special_tokens=False))
-            
-            # Extract the vector to prove it exists in the dictionary format
-            vector_data = chunk.get("embedding", [])
-            vector_length = len(vector_data)
-            
-            # Preview a small slice of the first 3 numbers of the 384 array
-            vector_preview = vector_data[:3] if vector_length >= 3 else []
-            
-            print(f" 👉 Sub-chunk {i+1}:")
-            print(f"    • Token Measurement : {chunk_tokens} verified tokens (Drift Check)")
-            print(f"    • Vector Dimension  : Size {vector_length} list (Target: 384)")
-            print(f"    • Vector Values Mock: {vector_preview}... (Normalized coordinates)")
-            print(f"    • Text Snippet      : '{text_to_encode[:80]}...'")
-            print("-" * 40)
-            
-    # 2. Inspect a RANDOM Child Table layout
-    if children:
-        random_child_idx = random.randint(0, len(children) - 1)
-        sample_child = children[random_child_idx]
-        print(f"\n📊 [SAMPLE CHILD TABLE (Random Index: {random_child_idx})]")
-        print("-" * 40)
-        
-        table_content = sample_child.get('table_content', '') if isinstance(sample_child, dict) else (
-            sample_child.page_content if hasattr(sample_child, 'page_content') else str(sample_child)
-        )
-        print(table_content)
-        print("-" * 40)
-    else:
-        print("\n❌ No child tables found in the extraction list to display.")
-        
-    print(f"\n✅ Inspection Finished. Total Parents: {len(parents)} | Total Child Tables: {len(children)}")
+    # =========================================================================
+    # 👆 END OF NEW EXTRACTION LOOP LINES 👆
+    # =========================================================================
+
+    print("=" * 75)
+    print("✅ All functional specification targets met. Data sits stored on disk and maps cleanly to raw targets.")

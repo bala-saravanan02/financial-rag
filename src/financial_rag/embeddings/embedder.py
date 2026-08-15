@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
+from config.config import MODEL_ID
 
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
 model = SentenceTransformer(MODEL_ID, device="cpu")
 
 def embed_chunks(chunks: list[dict]) -> list[dict]:
